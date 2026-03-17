@@ -12,18 +12,32 @@ class WaWebHookMessages(models.Model):
     _order = "create_date DESC"
 
     json_content = fields.Char()
+
+    def _extract_statuses(self, payload):
+        statuses = []
+        if isinstance(payload, dict):
+            if isinstance(payload.get('statuses'), list):
+                statuses.extend(payload.get('statuses') or [])
+            for entry in payload.get('entry', []) or []:
+                for change in entry.get('changes', []) or []:
+                    value = change.get('value') or {}
+                    if isinstance(value.get('statuses'), list):
+                        statuses.extend(value.get('statuses') or [])
+        return statuses
+
     @api.depends('json_content')
     def message_process(self):
         for record in self:
             payload = json.loads(record.json_content)
-            if "statuses" in payload.keys():
-                for status in payload['statuses']:
-                    message_id = status['id']
-                    status = status['status']
-                    wa_message = self.env['wa.message'].sudo().search([('dialog_message_id', '=', message_id)])
-                    if wa_message:
-                        wa_message[0].status = status
-                        wa_message[0].webhook_message_ids = [(4, record.id)]
+            for status_item in record._extract_statuses(payload):
+                message_id = status_item.get('id')
+                status = status_item.get('status')
+                if not message_id or not status:
+                    continue
+                wa_message = self.env['wa.message'].sudo().search([('dialog_message_id', '=', message_id)])
+                if wa_message:
+                    wa_message[0].status = status
+                    wa_message[0].webhook_message_ids = [(4, record.id)]
             record.trigger_message_process = False if record.trigger_message_process else True
     trigger_message_process = fields.Boolean(compute=message_process, store=True)
 
@@ -88,11 +102,73 @@ class WaMessageQueue(models.Model):
     def get_config(self):
         company = self.env.user.company_id
         return {
+            'wa_provider': company.wa_provider,
+            'wa_base_url': company.wa_base_url,
+            'wa_api_key_header': company.wa_api_key_header or 'Authorization',
+            'wa_api_version': company.wa_api_version or 'v19.0',
+            'wa_phone_number_id': company.wa_phone_number_id,
             'dialog_api_key': company.dialog_api_key,
             'dialog_namespace': company.dialog_namespace,
             'webhook_url': company.webhook_url,
             'developer_mode': company.developer_mode,
         }
+
+    def _is_uno_provider(self, config):
+        return (config.get('wa_provider') or '').strip() == 'unoapi'
+
+    def _provider_base_url(self, config):
+        if self._is_uno_provider(config):
+            base = (config.get('wa_base_url') or '').rstrip('/')
+            if not base:
+                raise ValidationError(_("UNO API base URL is required when provider is UNO API"))
+            return base
+        if config.get('developer_mode'):
+            return "https://waba-sandbox.360dialog.io/v1"
+        return "https://waba.360dialog.io/v1"
+
+    def _provider_headers(self, config):
+        api_key = config.get('dialog_api_key')
+        if not api_key:
+            raise ValidationError(_("API Key is required"))
+        if self._is_uno_provider(config):
+            header_name = (config.get('wa_api_key_header') or 'Authorization').strip()
+            header_value = api_key
+            if header_name.lower() == 'authorization' and not str(api_key).lower().startswith('bearer '):
+                header_value = f"Bearer {api_key}"
+            return {
+                header_name: header_value,
+                'Content-Type': "application/json",
+            }
+        return {
+            'D360-Api-Key': api_key,
+            'Content-Type': "application/json",
+        }
+
+    def _messages_url(self, config):
+        if self._is_uno_provider(config):
+            version = (config.get('wa_api_version') or 'v19.0').strip()
+            phone_number_id = (config.get('wa_phone_number_id') or '').strip()
+            if not phone_number_id:
+                raise ValidationError(_("Phone Number ID is required when provider is UNO API"))
+            return f"{self._provider_base_url(config)}/{version}/{phone_number_id}/messages"
+        return f"{self._provider_base_url(config)}/messages"
+
+    def _health_url(self, config):
+        if self._is_uno_provider(config):
+            return f"{self._provider_base_url(config)}/ping"
+        return f"{self._provider_base_url(config)}/health_status"
+
+    def _extract_response_json(self, response):
+        try:
+            return response.json()
+        except Exception:
+            return {'raw': response.text}
+
+    def _extract_message_id(self, payload):
+        messages = payload.get('messages') or []
+        if isinstance(messages, list) and messages:
+            return messages[0].get('id')
+        return False
 
     def schedule_error_activity(self, error_message):
         if self.res_model and self.res_id:
@@ -155,40 +231,25 @@ class WaMessageQueue(models.Model):
     trigger_log_note = fields.Boolean(compute=log_note, store=True)
     def config_testing_webhook(self):
         config = self.get_config()
-        developer_mode = config['developer_mode']
-        if developer_mode:
-            url = "https://waba-sandbox.360dialog.io/v1/configs/webhook"
-        else:
-            url = "https://waba.360dialog.io/v1/configs/webhook"
+        if self._is_uno_provider(config):
+            _logger.info("UNO provider selected: webhook must be configured on UNO side. Endpoint: /webhooks/whatsapp")
+            return
+        url = f"{self._provider_base_url(config)}/configs/webhook"
         payload = {"url": config['webhook_url'] + "/api/v1/whatsapp/webhook"}
-        headers = {
-            'D360-Api-Key': config['dialog_api_key'],
-            'Content-Type': "application/json",
-        }
+        headers = self._provider_headers(config)
         response = requests.post(url, data=json.dumps(payload), headers=headers)
-        _logger.info("WhatsApp webhook configured: %s", response.json())
+        _logger.info("WhatsApp webhook configured: %s", self._extract_response_json(response))
 
     def messaging_health_status(self):
         config = self.get_config()
-        developer_mode = config['developer_mode']
-        if developer_mode:
-            url = "https://waba.360dialog.io/v1/health_status"
-        else:
-            url = "https://waba.360dialog.io/v1/health_status"
-        headers = {
-            'D360-Api-Key': config['dialog_api_key'],
-            'Content-Type': "application/json",
-        }
+        url = self._health_url(config)
+        headers = self._provider_headers(config)
         response = requests.get(url, headers=headers)
-        _logger.info("WhatsApp Health Test: %s", response.json())
+        _logger.info("WhatsApp Health Test: %s", self._extract_response_json(response))
 
     def send_message(self, res_id, res_model, phone_number, text):
         config = self.get_config()
-        developer_mode = config['developer_mode']
-        if developer_mode:
-            url = "https://waba-sandbox.360dialog.io/v1/messages"
-        else:
-            url = "https://waba.360dialog.io/v1/messages"
+        url = self._messages_url(config)
         # Create the payload with the injected phone number and text
         payload = {
             "to": phone_number,
@@ -199,14 +260,12 @@ class WaMessageQueue(models.Model):
                 "body": text
             }
         }
-        headers = {
-            'D360-API-KEY': config['dialog_api_key'],
-            'Content-Type': "application/json",
-        }
+        headers = self._provider_headers(config)
         # Convert the payload dictionary to a JSON string
         payload_json = json.dumps(payload)
         # Send the POST request with the payload and headers
         response = requests.post(url, json=payload, headers=headers)
+        response_json = self._extract_response_json(response)
         dialog_message = False
         if response.status_code == 200:
             status = 'delivered'
@@ -214,8 +273,8 @@ class WaMessageQueue(models.Model):
             status = 'failed'
         else:
             status = 'in_progress'
-        if 'messages' in response.json().keys():
-            dialog_message = response.json()['messages'][0]['id']
+        if isinstance(response_json, dict):
+            dialog_message = self._extract_message_id(response_json)
         message_vals = {
             'res_id': res_id,
             'res_model': res_model,
@@ -223,7 +282,7 @@ class WaMessageQueue(models.Model):
             'status': status,
             'dialog_message_id': dialog_message,
             'json_payload': payload_json,
-            'json_response': json.dumps(response.json()),
+            'json_response': json.dumps(response_json),
             'company_id': self.env.user.company_id.id,
             'message_content': text
         }
@@ -231,11 +290,7 @@ class WaMessageQueue(models.Model):
 
     def send_message_template(self, res_id, res_model, phone_number, template_id):
         config = self.get_config()
-        developer_mode = config['developer_mode']
-        if developer_mode:
-            url = "https://waba-sandbox.360dialog.io/v1/messages"
-        else:
-            url = "https://waba.360dialog.io/v1/messages"
+        url = self._messages_url(config)
         active_rec = self.env[res_model].browse(res_id)
         parameters = []
         for param in template_id.get_params_values(res_id):
@@ -248,7 +303,6 @@ class WaMessageQueue(models.Model):
                 "type": "template",
                 "messaging_product": "whatsapp",
                 "template": {
-                    "namespace": config['dialog_namespace'],
                     "language":  {"code": template_id.lang_code or "en", "policy": "deterministic"},
                     "name": template_id.dialog_reference,
                     "components": [{
@@ -258,12 +312,12 @@ class WaMessageQueue(models.Model):
                     ]
                 }
             }
+        if not self._is_uno_provider(config):
+            payload["template"]["namespace"] = config['dialog_namespace']
         payload_json = json.dumps(payload)
-        headers = {
-            'D360-Api-Key': config['dialog_api_key'],
-            'Content-Type': "application/json",
-        }
+        headers = self._provider_headers(config)
         response = requests.post(url, json=payload, headers=headers)
+        response_json = self._extract_response_json(response)
         if response.status_code == 200:
             status = 'delivered'
         elif '40' in str(response.status_code):
@@ -271,8 +325,8 @@ class WaMessageQueue(models.Model):
         else:
             status = 'in_progress'
         dialog_message = False
-        if 'messages' in response.json().keys():
-            dialog_message = response.json()['messages'][0]['id']
+        if isinstance(response_json, dict):
+            dialog_message = self._extract_message_id(response_json)
         message_vals = {
             'res_id': res_id,
             'res_model': res_model,
@@ -280,7 +334,7 @@ class WaMessageQueue(models.Model):
             'status': status,
             'dialog_message_id': dialog_message,
             'json_payload': payload_json,
-            'json_response': json.dumps(response.json()),
+            'json_response': json.dumps(response_json),
             'company_id': self.env.user.company_id.id,
             'wa_message_template_id': template_id.id,
             'message_content': template_id.get_sending_txt(template_id.get_params_values(res_id)),

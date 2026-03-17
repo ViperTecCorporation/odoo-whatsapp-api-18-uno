@@ -4,6 +4,32 @@ from odoo import fields, models
 class ResConfigSettings(models.TransientModel):
     _inherit = "res.config.settings"
 
+    wa_provider = fields.Selection(
+        selection=[('360dialog', '360dialog'), ('unoapi', 'UNO API')],
+        string="WhatsApp Provider",
+        related='company_id.wa_provider',
+        readonly=False,
+    )
+    wa_base_url = fields.Char(
+        string="Provider Base URL",
+        related='company_id.wa_base_url',
+        readonly=False,
+    )
+    wa_api_key_header = fields.Char(
+        string="API Key Header",
+        related='company_id.wa_api_key_header',
+        readonly=False,
+    )
+    wa_api_version = fields.Char(
+        string="API Version",
+        related='company_id.wa_api_version',
+        readonly=False,
+    )
+    wa_phone_number_id = fields.Char(
+        string="Phone Number ID",
+        related='company_id.wa_phone_number_id',
+        readonly=False,
+    )
 
     dialog_api_key = fields.Char(
         string="360 Dialog Api Key",
@@ -32,6 +58,25 @@ class ResConfigSettings(models.TransientModel):
 class Company(models.Model):
     _inherit = "res.company"
 
+    wa_provider = fields.Selection(
+        selection=[('360dialog', '360dialog'), ('unoapi', 'UNO API')],
+        string="WhatsApp Provider",
+        default='360dialog',
+    )
+    wa_base_url = fields.Char(
+        string="Provider Base URL",
+    )
+    wa_api_key_header = fields.Char(
+        string="API Key Header",
+        default='Authorization',
+    )
+    wa_api_version = fields.Char(
+        string="API Version",
+        default='v19.0',
+    )
+    wa_phone_number_id = fields.Char(
+        string="Phone Number ID",
+    )
     dialog_api_key = fields.Char(
         string="360 Dialog Api Key",
     )
@@ -44,4 +89,3 @@ class Company(models.Model):
     developer_mode = fields.Boolean(
         string="Developer Mode"
     )
-
