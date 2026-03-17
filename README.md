@@ -1,16 +1,43 @@
 # odoo-whatsapp-api
-Odoo WhatsApp 360 Dialog Integration
+Odoo WhatsApp Integration (360dialog + UNO API)
 <h2> Description</h2>
-This module allows to send messages in any Odoo model. The messages can be from pre-loaded templates of the 360 Dialog namespace or manually writen if the conversation has already been started.
+This module allows to send messages in any Odoo model. The messages can be from pre-loaded templates or manually writen if the conversation has already been started.
 If the message fails, and activity will be created in order to correct the issue.<br/>
 This module was tested in v15, v16 and v17.
 
+<h2>Provider support</h2>
+The module supports two providers:
+<br/>
+→ **360dialog** (legacy/original behavior)
+<br/>
+→ **UNO API** (Meta-like endpoints)
+<br/>
+For UNO API, configure in Odoo Settings:
+<br/>
+1. Provider = `UNO API`
+<br/>
+2. Provider Base URL = `https://your-uno-domain.com`
+<br/>
+3. API Version = `v19.0` (or your UNO version path)
+<br/>
+4. Phone Number ID = UNO session number/ID configured for Cloud-like routes
+<br/>
+5. API Key Header = `Authorization` (recommended)
+<br/>
+6. 360 Dialog API Key field = your UNO token (optional; only if your UNO requires auth)
+<br/>
+Incoming webhook endpoint remains:
+<br/>
+`/api/v1/whatsapp/webhook`
+
 <h2>Requirements</h2>
-To use this module you need to have an authorized API key. You can request one  <a href="https://services.tochat.be/es/whatsapp-business-directory/877b04a9-edb7-45cf-893c-8c9a44fa0bad" target="_blank"><span>here.</span></a>
+For **360dialog provider**, you need an authorized API key. You can request one  <a href="https://services.tochat.be/es/whatsapp-business-directory/877b04a9-edb7-45cf-893c-8c9a44fa0bad" target="_blank"><span>here.</span></a>
  <br/><br/>
-For development purposes there is a Sandbox environment, in which you can get a free API key to send unlimited WhatsApp Messages to your own phone Number. <br/>
-This module allows to send messages using the development environment. Check out the <a href="https://docs.360dialog.com/docs/waba-messaging/sandbox" target="_blank"><span>sandbox docs</span></a>
+For development purposes there is a Sandbox environment for 360dialog, in which you can get a free API key to send unlimited WhatsApp Messages to your own phone Number. <br/>
+This module allows to send messages using that development environment. Check out the <a href="https://docs.360dialog.com/docs/waba-messaging/sandbox" target="_blank"><span>sandbox docs</span></a>
  <span> to get you free API key</span><br/>
+<br/>
+For **UNO API provider**, API key is optional and depends on your UNO server security configuration.
 
 <h2>Installation</h2>
 <span>

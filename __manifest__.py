@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'WhatsApp API Integration (360dialog)',
-    'summary': "Send and receive WhatsApp messages via 360dialog API",
+    'name': 'WhatsApp API Integration (360dialog/UNO)',
+    'summary': "Send and receive WhatsApp messages via 360dialog or UNO API",
     'description': """
-Integrates Odoo with 360dialog's WhatsApp Business API.
+Integrates Odoo with 360dialog or UNO API (Meta-like compatibility).
 Features:
  - Send WhatsApp messages from CRM/Leads, Partners, and custom models.
  - Manage WhatsApp message templates and parameters.
