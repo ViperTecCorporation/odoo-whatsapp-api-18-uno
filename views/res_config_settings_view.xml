@@ -5,7 +5,7 @@
     <field name="model">res.config.settings</field>
     <field name="priority" eval="100" />
     <field name="arch" type="xml">
-        <xpath expr="//div[@id='settings_modules']" position="inside">
+        <xpath expr="//form" position="inside">
             <div class="app_settings_block" data-key="odoo-whatsapp-api">
                 <h2>WhatsApp Connection Settings</h2>
                 <div class="row mt16 o_settings_container" name="whatsapp_setting_container">
