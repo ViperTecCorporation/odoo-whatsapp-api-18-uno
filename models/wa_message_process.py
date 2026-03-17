@@ -128,9 +128,11 @@ class WaMessageQueue(models.Model):
 
     def _provider_headers(self, config):
         api_key = config.get('dialog_api_key')
-        if not api_key:
-            raise ValidationError(_("API Key is required"))
         if self._is_uno_provider(config):
+            if not api_key:
+                return {
+                    'Content-Type': "application/json",
+                }
             header_name = (config.get('wa_api_key_header') or 'Authorization').strip()
             header_value = api_key
             if header_name.lower() == 'authorization' and not str(api_key).lower().startswith('bearer '):
@@ -139,6 +141,8 @@ class WaMessageQueue(models.Model):
                 header_name: header_value,
                 'Content-Type': "application/json",
             }
+        if not api_key:
+            raise ValidationError(_("API Key is required for 360dialog provider"))
         return {
             'D360-Api-Key': api_key,
             'Content-Type': "application/json",
